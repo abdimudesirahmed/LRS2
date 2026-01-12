@@ -1,0 +1,89 @@
+<div class="document-list-container">
+  <h2>Document Management</h2>
+  <p class="subtitle"> View Document &  Document Version Management</p>
+
+  <div class="search-section">
+    <label for="sourceId">Source ID:</label>
+    <input 
+      type="number" 
+      id="sourceId"
+      [(ngModel)]="sourceId" 
+      (ngModelChange)="onSourceIdChange()"
+      placeholder="Enter Source ID to view documents"
+      class="source-input" />
+    <button (click)="loadDocuments()" [disabled]="!sourceId || isLoading">
+      <span *ngIf="!isLoading">🔍 Load Documents</span>
+      <span *ngIf="isLoading">⏳ Loading...</span>
+    </button>
+  </div>
+
+  <div class="error-message" *ngIf="errorMessage">
+    {{ errorMessage }}
+  </div>
+
+  <div *ngIf="documents.length > 0" class="documents-section">
+    <!-- Latest Version (Active Document) -->
+    <div class="version-section">
+      <h3>📄 Latest Version (Active)</h3>
+      <div class="document-card active" *ngIf="getLatestVersion(documents) as latestDoc">
+        <div class="document-header">
+          <span class="badge active-badge">ACTIVE</span>
+          <span class="document-name">{{ latestDoc.documentName || 'N/A' }}</span>
+        </div>
+        <div class="document-details">
+          <p><strong>Document ID:</strong> {{ latestDoc.id }}</p>
+          <p><strong>Application Reg ID:</strong> {{ latestDoc.appRegId }}</p>
+          <p><strong>Unique Parcel ID:</strong> {{ latestDoc.uniqueParcelId || 'N/A' }}</p>
+          <p><strong>Submission Date:</strong> {{ formatDate(latestDoc.submissionDate) }}</p>
+          <p><strong>Status:</strong> <span class="status-active">Active (Not Void)</span></p>
+        </div>
+        <div class="document-actions">
+          <button class="view-btn" (click)="viewDocument(latestDoc.id, latestDoc.documentName || 'document')">
+            👁️ View Document
+          </button>
+          <button class="download-btn" (click)="downloadDocument(latestDoc.id, latestDoc.documentName || 'document')">
+            ⬇️ Download
+          </button>
+        </div>
+      </div>
+      <p class="no-documents" *ngIf="!getLatestVersion(documents)">
+        No active documents found.
+      </p>
+    </div>
+
+    <!-- Version History (Voided Documents) -->
+    <div class="version-section" *ngIf="getVoidedVersions(documents).length > 0">
+      <h3>📚 Version History (Previous Versions - Read Only)</h3>
+      <div class="version-list">
+        <div class="document-card voided" *ngFor="let doc of getVoidedVersions(documents)">
+          <div class="document-header">
+            <span class="badge voided-badge">VOIDED</span>
+            <span class="document-name">{{ doc.documentName || 'N/A' }}</span>
+          </div>
+          <div class="document-details">
+            <p><strong>Document ID:</strong> {{ doc.id }}</p>
+            <p><strong>Application Reg ID:</strong> {{ doc.appRegId }}</p>
+            <p><strong>Unique Parcel ID:</strong> {{ doc.uniqueParcelId || 'N/A' }}</p>
+            <p><strong>Submission Date:</strong> {{ formatDate(doc.submissionDate) }}</p>
+            <p><strong>Status:</strong> <span class="status-voided">Voided (Legally Invalid - Read Only)</span></p>
+          </div>
+          <div class="document-actions">
+            <button class="view-btn" (click)="viewDocument(doc.id, doc.documentName || 'document')">
+              👁️ View (Read Only)
+            </button>
+            <button class="download-btn" (click)="downloadDocument(doc.id, doc.documentName || 'document')">
+              ⬇️ Download
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="no-documents" *ngIf="documents.length === 0 && !isLoading && sourceId">
+    <p>No documents found for Source ID: {{ sourceId }}</p>
+  </div>
+</div>
+
+
+

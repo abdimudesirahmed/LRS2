@@ -1,0 +1,93 @@
+<div class="scan-container">
+  <h2>Scan & Upload Document</h2>
+  <p class="subtitle"> Scan and Upload Document</p>
+
+  <form (ngSubmit)="uploadDocument()">
+    <div class="form-group">
+      <label for="adminSourceType">Administrative Source Type <span class="required">*</span>:</label>
+      <select id="adminSourceType" [(ngModel)]="adminSourceTypeId" name="adminSourceType" [disabled]="isLoadingTypes"
+        required>
+        <option [value]="0" disabled>Select a document type...</option>
+        <option *ngFor="let type of administrativeSourceTypes" [value]="type.id">
+          {{ type.englishValue }}
+        </option>
+      </select>
+      <span class="error" *ngIf="formErrors['adminSourceTypeId']">{{ formErrors['adminSourceTypeId'] }}</span>
+      <span class="loading" *ngIf="isLoadingTypes">Loading document types...</span>
+    </div>
+
+    <div class="form-row">
+      <div class="form-group">
+        <label for="appRegId">Application Registration ID <span class="required">*</span>:</label>
+        <input type="text" id="appRegId" [(ngModel)]="appRegId" name="appRegId" placeholder="e.g. appReg1000123"
+          required />
+        <span class="error" *ngIf="formErrors['appRegId']">{{ formErrors['appRegId'] }}</span>
+      </div>
+      <!-- Unique Parcel ID removed as per requirements -->
+      <!-- <div class="form-group">
+        <label for="uniqueParcelId">Unique Parcel ID <span class="required">*</span>:</label>
+        <input 
+          type="text" 
+          id="uniqueParcelId"
+          [(ngModel)]="uniqueParcelId" 
+          name="uniqueParcelId"
+          required />
+      </div> -->
+    </div>
+
+    <div class="form-row">
+      <div class="form-group">
+        <label for="sourceId">Source ID (Optional, for linking to existing source):</label>
+        <input type="number" id="sourceId" [(ngModel)]="sourceId" name="sourceId"
+          placeholder="Leave empty for New Source" />
+      </div>
+      <div class="form-group">
+        <label for="createdBy">Created By (Optional):</label>
+        <input type="text" id="createdBy" [(ngModel)]="createdBy" name="createdBy" placeholder="Your name or ID" />
+      </div>
+    </div>
+
+    <div class="actions">
+      <button type="button" (click)="startScan()" [disabled]="isScanning || isUploading">
+        <span *ngIf="!isScanning">📷 Scan Document</span>
+        <span *ngIf="isScanning">Scanning...</span>
+      </button>
+      <span class="or-separator">OR</span>
+      <label class="file-upload-btn">
+        📁 Upload File
+        <input type="file" (change)="onFileSelected($event)" accept="image/*,application/pdf" [disabled]="isUploading"
+          style="display: none;" />
+      </label>
+      <span class="error" *ngIf="formErrors['file']">{{ formErrors['file'] }}</span>
+    </div>
+
+    <!-- Camera View -->
+    <div class="camera-view" [class.hidden]="!isScanning">
+      <video #video autoplay playsinline></video>
+      <button class="capture-btn" (click)="captureImage()">Capture</button>
+      <button class="cancel-btn" (click)="stopCamera()">Cancel</button>
+    </div>
+
+    <canvas #canvas style="display: none;"></canvas>
+
+    <!-- Preview -->
+    <div class="preview" *ngIf="hasCapturedImage">
+      <h3>Document Preview</h3>
+      <img [src]="capturedImageSrc" alt="Captured Document" />
+      <div class="upload-actions">
+        <button type="submit" class="primary-btn" [disabled]="isUploading">
+          <span *ngIf="!isUploading">✅ Upload to System</span>
+          <span *ngIf="isUploading">⏳ Uploading...</span>
+        </button>
+        <button type="button" class="secondary-btn" (click)="resetForm()" [disabled]="isUploading">
+          🔄 Reset
+        </button>
+      </div>
+    </div>
+
+    <div class="status-message" *ngIf="statusMessage" [class.success]="statusMessage.includes('Success')"
+      [class.error]="statusMessage.includes('failed') || statusMessage.includes('error')">
+      {{ statusMessage }}
+    </div>
+  </form>
+</div>

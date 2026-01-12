@@ -1,0 +1,62 @@
+.app-container {
+  min-height: 100vh;
+  background: #f5f5f5;
+}
+
+header {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  padding: 2rem;
+  text-align: center;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+header h1 {
+  margin: 0 0 0.5rem 0;
+  font-size: 2rem;
+}
+
+header p {
+  margin: 0;
+  opacity: 0.9;
+  font-size: 1rem;
+}
+
+nav {
+  margin-top: 1.5rem;
+  display: flex;
+  justify-content: center;
+  gap: 1rem;
+}
+
+nav a {
+  color: white;
+  text-decoration: none;
+  padding: 0.75rem 1.5rem;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.1);
+  transition: background 0.3s;
+  font-weight: bold;
+}
+
+nav a:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+nav a.active {
+  background: rgba(255, 255, 255, 0.3);
+  border-bottom: 2px solid white;
+}
+
+main {
+  padding: 2rem 0;
+}
+
+
+
+
+
+
+
+
+

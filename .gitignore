@@ -1,0 +1,58 @@
+# Visual Studio
+.vs/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*.sln.ide
+
+# Build outputs
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+*.log
+
+# NuGet
+debug*/
+packages/
+*.nupkg
+*.snupkg
+project.lock.json
+project.fragment.lock.json
+project.json.lock
+
+# Dotnet tooling
+*.DotSettings.user
+*.dbmdl
+*.opendb
+*.jfm
+*.pdb
+*.mdb
+*.cache
+_ReSharper*/
+[Tt]est[Rr]esult*/
+coverage*/
+*.coverage*
+.nuget/
+.sonarqube/
+.scannerwork/
+
+# Secrets/config
+appsettings.*.local.json
+*.secret.json
+.env
+
+# Node/Angular
+**/node_modules/
+**/dist/
+**/coverage/
+.angular/cache/
+
+# IDE
+.idea/
+.vscode/
+
+# OS
+[Dd]esktop.ini
+[Tt]humbs.db
+$RECYCLE.BIN/
