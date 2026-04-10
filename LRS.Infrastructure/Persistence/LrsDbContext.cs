@@ -1,4 +1,4 @@
-﻿using LRS.Domain.Entities;
+using LRS.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
 using System.Collections.Generic;
 
@@ -13,6 +13,8 @@ public class LrsDbContext : DbContext
     public DbSet<AdministrativeSource> AdministrativeSources => Set<AdministrativeSource>();
     public DbSet<AdministrativeSourceType> AdministrativeSourceTypes => Set<AdministrativeSourceType>();
     public DbSet<Document> Documents => Set<Document>();
+    public DbSet<AppUser> Users => Set<AppUser>();
+    public DbSet<FidoCredential> FidoCredentials => Set<FidoCredential>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

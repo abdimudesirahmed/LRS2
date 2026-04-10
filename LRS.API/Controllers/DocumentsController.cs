@@ -1,10 +1,13 @@
-﻿using LRS.Application.DTOs;
+using LRS.Application.DTOs;
 using LRS.Application.Interfaces;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
 
+using Microsoft.AspNetCore.Authorization;
+
 namespace LRS.API.Controllers;
 
+[Authorize]
 [ApiController]
 [Route("api/documents")]
 public class DocumentsController : ControllerBase

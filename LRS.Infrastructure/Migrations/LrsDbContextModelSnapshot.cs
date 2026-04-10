@@ -132,6 +132,34 @@ namespace LRS.Infrastructure.Migrations
                         });
                 });
 
+            modelBuilder.Entity("LRS.Domain.Entities.AppUser", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Email")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("PasswordHash")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateTime>("RegisteredAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Role")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("Users");
+                });
+
             modelBuilder.Entity("LRS.Domain.Entities.Document", b =>
                 {
                     b.Property<int>("Id")
@@ -166,7 +194,6 @@ namespace LRS.Infrastructure.Migrations
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("UniqueParcelId")
-                        .IsRequired()
                         .HasColumnType("text");
 
                     b.HasKey("Id");
@@ -174,6 +201,48 @@ namespace LRS.Infrastructure.Migrations
                     b.HasIndex("SourceId");
 
                     b.ToTable("Documents");
+                });
+
+            modelBuilder.Entity("LRS.Domain.Entities.FidoCredential", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<Guid>("AaGuid")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("AppUserId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("CredType")
+                        .HasColumnType("integer");
+
+                    b.Property<byte[]>("CredentialId")
+                        .IsRequired()
+                        .HasColumnType("bytea");
+
+                    b.Property<byte[]>("PublicKey")
+                        .IsRequired()
+                        .HasColumnType("bytea");
+
+                    b.Property<DateTime>("RegDate")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<long>("SignatureCounter")
+                        .HasColumnType("bigint");
+
+                    b.Property<byte[]>("UserHandle")
+                        .IsRequired()
+                        .HasColumnType("bytea");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AppUserId");
+
+                    b.ToTable("FidoCredentials");
                 });
 
             modelBuilder.Entity("LRS.Domain.Entities.Source", b =>
@@ -222,6 +291,22 @@ namespace LRS.Infrastructure.Migrations
                         .HasForeignKey("SourceId");
 
                     b.Navigation("Source");
+                });
+
+            modelBuilder.Entity("LRS.Domain.Entities.FidoCredential", b =>
+                {
+                    b.HasOne("LRS.Domain.Entities.AppUser", "AppUser")
+                        .WithMany("FidoCredentials")
+                        .HasForeignKey("AppUserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("AppUser");
+                });
+
+            modelBuilder.Entity("LRS.Domain.Entities.AppUser", b =>
+                {
+                    b.Navigation("FidoCredentials");
                 });
 
             modelBuilder.Entity("LRS.Domain.Entities.Source", b =>

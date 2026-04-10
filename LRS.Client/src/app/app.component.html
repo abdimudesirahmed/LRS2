@@ -5,6 +5,9 @@
     <nav>
       <a routerLink="/scan" routerLinkActive="active">📷 Scan & Upload</a>
       <a routerLink="/documents" routerLinkActive="active">📄 View Documents</a>
+      <a *ngIf="auth.hasToken() && auth.isAdmin()" routerLink="/admin/register" routerLinkActive="active">
+        👤 Register admin
+      </a>
     </nav>
   </header>
 

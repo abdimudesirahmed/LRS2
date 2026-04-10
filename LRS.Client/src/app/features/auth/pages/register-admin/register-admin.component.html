@@ -1,0 +1,67 @@
+<div class="page">
+  <h2>Register administrator</h2>
+  <p class="lead">Create another admin account (password sign-in). Only existing administrators can use this page.</p>
+
+  <form [formGroup]="form" (ngSubmit)="onSubmit()">
+    <div class="form-group">
+      <label for="email">Email</label>
+      <input id="email" type="email" formControlName="email" autocomplete="email" />
+      <span class="err" *ngIf="form.get('email')?.invalid && form.get('email')?.touched">Valid email required.</span>
+    </div>
+
+    <div class="form-group">
+      <label for="password">Password</label>
+      <input id="password" type="password" formControlName="password" autocomplete="new-password" />
+      <span class="err" *ngIf="form.get('password')?.invalid && form.get('password')?.touched">
+        At least 8 characters.
+      </span>
+    </div>
+
+    <div class="form-group">
+      <label for="confirm">Confirm password</label>
+      <input id="confirm" type="password" formControlName="confirmPassword" autocomplete="new-password" />
+    </div>
+
+    <div class="alert err" *ngIf="errorMessage">{{ errorMessage }}</div>
+    <div class="alert ok" *ngIf="successMessage">{{ successMessage }}</div>
+
+    <button type="submit" class="submit" [disabled]="isSubmitting">
+      {{ isSubmitting ? 'Creating…' : 'Create administrator' }}
+    </button>
+  </form>
+
+  <section class="passkey-panel" *ngIf="pendingPasskeyEmail">
+    <h3>Register biometric for this account</h3>
+    <p class="lead">
+      Optional: register a passkey on <strong>this device</strong> for <strong>{{ pendingPasskeyEmail }}</strong> (fingerprint, face, or device PIN).
+      The new administrator can use <strong>Login using biometric</strong> here on this computer.
+    </p>
+    <p class="warn" *ngIf="!passkeySupported">This browser does not support passkeys / biometrics.</p>
+
+    <form [formGroup]="passkeyForm" (ngSubmit)="registerBiometric()">
+      <div class="form-group">
+        <label for="verifyPw">Their password (verify)</label>
+        <input
+          id="verifyPw"
+          type="password"
+          formControlName="verifyPassword"
+          autocomplete="new-password"
+          placeholder="Same password you just set"
+        />
+        <span class="err" *ngIf="passkeyForm.get('verifyPassword')?.invalid && passkeyForm.get('verifyPassword')?.touched">
+          Enter the password (at least 8 characters).
+        </span>
+      </div>
+
+      <div class="alert err" *ngIf="passkeyError">{{ passkeyError }}</div>
+      <div class="alert ok" *ngIf="passkeySuccess">{{ passkeySuccess }}</div>
+
+      <div class="row">
+        <button type="submit" class="submit secondary" [disabled]="isRegisteringPasskey || !passkeySupported">
+          {{ isRegisteringPasskey ? 'Registering…' : 'Register biometric' }}
+        </button>
+        <button type="button" class="link-btn" (click)="skipPasskey()" [disabled]="isRegisteringPasskey">Skip</button>
+      </div>
+    </form>
+  </section>
+</div>

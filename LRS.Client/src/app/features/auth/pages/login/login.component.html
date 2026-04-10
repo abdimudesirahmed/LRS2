@@ -1,0 +1,69 @@
+<div class="login-container">
+  <div class="login-card">
+    <h2>Welcome to LRS</h2>
+    <p class="subtitle">Please login to continue</p>
+
+    <form [formGroup]="loginForm" (ngSubmit)="onSubmit()">
+      <div class="alert-error" *ngIf="errorMessage">
+        {{ errorMessage }}
+      </div>
+
+      <div class="alert-success" *ngIf="successMessage">
+        {{ successMessage }}
+      </div>
+
+      <button
+        type="button"
+        class="biometric-btn"
+        [disabled]="!passkeySupported || isBiometricLoading || isPasskeyRegistering || isLoading"
+        (click)="loginUsingBiometric()">
+        <span *ngIf="!isBiometricLoading">Login using biometric</span>
+        <span *ngIf="isBiometricLoading">Waiting for biometric…</span>
+      </button>
+
+      <div class="divider"><span>or sign in with password</span></div>
+
+      <div class="form-group">
+        <label for="email">Email address</label>
+        <input
+          type="email"
+          id="email"
+          formControlName="email"
+          placeholder="e.g. admin@lrs.com"
+          [class.invalid]="loginForm.get('email')?.invalid && loginForm.get('email')?.touched" />
+        <span class="error-msg" *ngIf="loginForm.get('email')?.invalid && loginForm.get('email')?.touched">
+          Please enter a valid email.
+        </span>
+      </div>
+
+      <div class="form-group">
+        <label for="password">Password</label>
+        <input
+          type="password"
+          id="password"
+          formControlName="password"
+          placeholder="Enter password"
+          [class.invalid]="loginForm.get('password')?.invalid && loginForm.get('password')?.touched" />
+      </div>
+
+      <button type="submit" class="login-btn" [disabled]="isLoading || isBiometricLoading || isPasskeyRegistering">
+        <span *ngIf="!isLoading">Sign In</span>
+        <span *ngIf="isLoading">Signing in…</span>
+      </button>
+
+      <p class="register-passkey-link">
+        <button type="button" class="link-like" [disabled]="isPasskeyRegistering || isBiometricLoading || isLoading" (click)="registerPasskey()">
+          {{ isPasskeyRegistering ? 'Registering passkey…' : 'Register passkey on this device' }}
+        </button>
+      </p>
+
+      <p class="support-note device-hint">
+        Biometric login uses a passkey on this device (no email or password). First time: register a passkey below after entering email and password, or sign in with password once.
+      </p>
+
+      <p class="support-note" *ngIf="!passkeySupported">
+        This browser/device does not support passkeys.
+      </p>
+    </form>
+  </div>
+</div>
