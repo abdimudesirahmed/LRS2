@@ -55,10 +55,10 @@ public class AlfrescoService : IAlfrescoService
             return _cachedRootNodeId;
 
         // Try different approaches to get the root node
-        // Method 1: Try using -root- alias directly
+        // Method 1: Try using the configured alias directly
         try
         {
-            var url = $"{_baseUrl}/nodes/-root-";
+            var url = $"{_baseUrl}/nodes/{_rootFolderId}";
             _logger.LogInformation("Attempting to get root node from: {Url}", url);
             var response = await _httpClient.GetAsync(url);
             
@@ -115,34 +115,34 @@ public class AlfrescoService : IAlfrescoService
             _logger.LogWarning(ex, "Failed to get root node via Company Home");
         }
 
-        // Method 3: Use -root- as fallback (might work for some operations)
-        _logger.LogWarning("Could not resolve root node ID, using -root- alias as fallback");
-        return "-root-";
+        // Method 3: Use configured root as fallback (might work for some operations)
+        _logger.LogWarning("Could not resolve root node ID, using {RootId} alias as fallback", _rootFolderId);
+        return _rootFolderId;
     }
 
-    public async Task<string> UploadDocumentAsync(IFormFile file, string applicationId)
+    public async Task<string> UploadDocumentAsync(IFormFile file, string applicationId, string parcelId)
     {
         try
         {
             // Get the actual root node ID
             var rootNodeId = await GetRootNodeIdAsync();
             
-            // SRS Requirement Update: Flattened or simplified structure
-            // ApplicationId (appReg1000123) / Application / BaUnit / SpatialUnit
-            
-            // 1. Ensure Application Folder exists under Root (formerly under Parcel)
-            var appFolderId = await EnsureFolderAsync(rootNodeId, applicationId);
+            // 1. Ensure Parcel Folder exists under Root
+            var parcelFolderId = await EnsureFolderAsync(rootNodeId, parcelId);
 
-            // 2. Ensure Application subfolder exists
+            // 2. Ensure Application Folder exists under Parcel
+            var appFolderId = await EnsureFolderAsync(parcelFolderId, applicationId);
+
+            // 3. Ensure Application subfolder exists
             var applicationSubFolderId = await EnsureFolderAsync(appFolderId, "Application");
 
-            // 3. Ensure BaUnit subfolder exists
+            // 4. Ensure BaUnit subfolder exists
             var baUnitFolderId = await EnsureFolderAsync(applicationSubFolderId, "BaUnit");
 
-            // 4. Ensure SpatialUnit subfolder exists
+            // 5. Ensure SpatialUnit subfolder exists
             var spatialUnitFolderId = await EnsureFolderAsync(baUnitFolderId, "SpatialUnit");
 
-            // 5. Upload File to SpatialUnit folder
+            // 6. Upload File to SpatialUnit folder
             return await UploadFileToFolderAsync(spatialUnitFolderId, file);
         }
         catch (Exception ex)
@@ -152,7 +152,7 @@ public class AlfrescoService : IAlfrescoService
         }
     }
 
-    public async Task<Stream> GetDocumentStreamAsync(string nodeId)
+    public async Task<(Stream Stream, string ContentType)> GetDocumentStreamAsync(string nodeId)
     {
         var url = $"{_baseUrl}/nodes/{nodeId}/content";
         var response = await _httpClient.GetAsync(url, HttpCompletionOption.ResponseHeadersRead);
@@ -163,7 +163,9 @@ public class AlfrescoService : IAlfrescoService
             throw new FileNotFoundException($"Document with NodeId {nodeId} not found in Alfresco or inaccessible.");
         }
 
-        return await response.Content.ReadAsStreamAsync();
+        var contentType = response.Content.Headers.ContentType?.MediaType ?? "application/octet-stream";
+        var stream = await response.Content.ReadAsStreamAsync();
+        return (stream, contentType);
     }
 
     private async Task<string> EnsureFolderAsync(string parentId, string folderName)
@@ -366,6 +368,30 @@ public class AlfrescoService : IAlfrescoService
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Exception while trying to delete Alfresco node {NodeId}", nodeId);
+        }
+    }
+
+    public async Task RenameNodeAsync(string nodeId, string newName)
+    {
+        try
+        {
+            var url = $"{_baseUrl}/nodes/{nodeId}";
+            var payload = new { name = newName };
+            var response = await _httpClient.PutAsJsonAsync(url, payload);
+            
+            if (!response.IsSuccessStatusCode)
+            {
+                var error = await response.Content.ReadAsStringAsync();
+                _logger.LogWarning("Failed to rename Alfresco node {NodeId}. Status: {Status}, Response: {Response}", nodeId, response.StatusCode, error);
+            }
+            else
+            {
+                _logger.LogInformation("Renamed Alfresco node {NodeId} to {NewName}", nodeId, newName);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Exception while trying to rename Alfresco node {NodeId}", nodeId);
         }
     }
 }

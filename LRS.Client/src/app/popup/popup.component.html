@@ -1,0 +1,152 @@
+<div class="metadata-form-container">
+  <div class="form-card">
+    <div class="form-header">
+      <h2>Document Metadata Entry</h2>
+      <p class="form-subtitle">Fill in the required application details, then attach or scan your document.</p>
+    </div>
+
+    <form (ngSubmit)="uploadDocument()" #metaForm="ngForm">
+      
+      <!-- Administrative Source Type selection -->
+      <div class="form-group">
+        <label for="adminSourceType">Administrative Source Type <span class="required-asterisk">*</span></label>
+        <div class="select-wrapper">
+          <select 
+            id="adminSourceType" 
+            [(ngModel)]="adminSourceTypeId" 
+            name="adminSourceType" 
+            [disabled]="isLoadingTypes || isUploading"
+            required>
+            <option [value]="0" disabled>Select a document type...</option>
+            <option *ngFor="let type of administrativeSourceTypes" [value]="type.id">
+              {{ type.englishValue }}
+            </option>
+          </select>
+        </div>
+        <span class="field-error" *ngIf="formErrors['adminSourceTypeId']">{{ formErrors['adminSourceTypeId'] }}</span>
+        <span class="loading-indicator" *ngIf="isLoadingTypes">Loading document types...</span>
+      </div>
+
+      <!-- Application and Parcel ID fields -->
+      <div class="form-row">
+        <!-- Application Registration ID field -->
+        <div class="form-group">
+          <label for="appRegId">Application Registration ID <span class="required-asterisk">*</span></label>
+          <input 
+            type="text" 
+            id="appRegId" 
+            [(ngModel)]="appRegId" 
+            name="appRegId" 
+            placeholder="e.g. appReg1000123"
+            [disabled]="isUploading"
+            required />
+          <span class="field-error" *ngIf="formErrors['appRegId']">{{ formErrors['appRegId'] }}</span>
+        </div>
+
+        <!-- Unique Parcel ID field -->
+        <div class="form-group">
+          <label for="uniqueParcelId">Unique Parcel ID <span class="required-asterisk">*</span></label>
+          <input 
+            type="text" 
+            id="uniqueParcelId" 
+            [(ngModel)]="uniqueParcelId" 
+            name="uniqueParcelId" 
+            placeholder="e.g. parcel-12345"
+            [disabled]="isUploading"
+            required />
+          <span class="field-error" *ngIf="formErrors['uniqueParcelId']">{{ formErrors['uniqueParcelId'] }}</span>
+        </div>
+      </div>
+
+      <!-- Optional fields (Source ID & Created By) -->
+      <div class="form-row">
+        <div class="form-group">
+          <label for="sourceId">Source ID (Optional)</label>
+          <input 
+            type="number" 
+            id="sourceId" 
+            [(ngModel)]="sourceId" 
+            name="sourceId" 
+            placeholder="New Source"
+            [disabled]="isUploading" />
+        </div>
+        <div class="form-group">
+          <label for="createdBy">Created By (Optional)</label>
+          <input 
+            type="text" 
+            id="createdBy" 
+            [(ngModel)]="createdBy" 
+            name="createdBy" 
+            placeholder="Your name or ID"
+            [disabled]="isUploading" />
+        </div>
+      </div>
+
+      <!-- Action Area: Scan vs Upload File -->
+      <div class="form-actions-selector">
+        <div class="action-block">
+          <button 
+            type="button" 
+            class="action-btn scan-trigger-btn" 
+            (click)="startScan()" 
+            [disabled]="isUploading">
+            <span class="btn-icon">📷</span> Scan Document
+          </button>
+          <p class="action-description">Connect your TWAIN/WIA scanner and edit scan pages in a modal popup.</p>
+        </div>
+
+        <div class="action-divider">
+          <span class="divider-line"></span>
+          <span class="divider-text">OR</span>
+          <span class="divider-line"></span>
+        </div>
+
+        <div class="action-block">
+          <label class="action-btn file-trigger-btn" [class.disabled]="isUploading">
+            <span class="btn-icon">📁</span> Select Local File
+            <input 
+              type="file" 
+              (change)="onFileSelected($event)" 
+              accept="image/*,application/pdf" 
+              [disabled]="isUploading"
+              style="display: none;" />
+          </label>
+          <p class="action-description">Choose a pre-existing PDF or image from your local computer storage.</p>
+        </div>
+      </div>
+      <span class="field-error center-error" *ngIf="formErrors['file']">{{ formErrors['file'] }}</span>
+
+      <!-- Preview of locally uploaded/attached document -->
+      <div class="preview-section" *ngIf="hasCapturedImage">
+        <h3>Attached Document Preview</h3>
+        <div class="preview-card-wrapper">
+          <div *ngIf="uploadedFile?.type === 'application/pdf'" class="pdf-preview-block">
+            <span class="pdf-icon">📄</span>
+            <span class="pdf-name">{{ uploadedFile?.name }}</span>
+            <span class="pdf-meta">PDF Document ready to upload</span>
+          </div>
+          <div *ngIf="uploadedFile?.type !== 'application/pdf' && capturedImageSrc" class="image-preview-block">
+            <img [src]="capturedImageSrc" alt="Attached file preview" />
+          </div>
+        </div>
+
+        <div class="final-submission-actions">
+          <button type="submit" class="submit-btn" [disabled]="isUploading">
+            <span *ngIf="!isUploading">✅ Upload to System</span>
+            <span *ngIf="isUploading">⏳ Uploading...</span>
+          </button>
+          <button type="button" class="reset-btn" (click)="resetForm()" [disabled]="isUploading">
+            🔄 Reset
+          </button>
+        </div>
+      </div>
+
+      <!-- Status banner for feedback messages -->
+      <div class="status-banner" *ngIf="statusMessage" 
+           [class.success]="statusMessage.includes('Success')"
+           [class.error]="statusMessage.includes('failed') || statusMessage.includes('error') || statusMessage.includes('required')">
+        {{ statusMessage }}
+      </div>
+    </form>
+  </div>
+</div>

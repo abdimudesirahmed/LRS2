@@ -11,7 +11,10 @@
 8. [API Endpoints](#api-endpoints)
 9. [External Integrations](#external-integrations)
 10. [Key Modules and Components](#key-modules-and-components)
-
+11. [Scanner Integration (Dynamsoft Web TWAIN)](#scanner-integration-dynamsoft-web-twain)
+12. [Testing and Quality Assurance](#testing-and-quality-assurance)
+13. [Security Considerations](#security-considerations)
+14. [Future Enhancements](#future-enhancements)
 ---
 
 ## Executive Summary
@@ -799,6 +802,46 @@ ng serve
 - API: `http://localhost:5000` (or configured port)
 - Swagger: `http://localhost:5000/swagger`
 - Frontend: `http://localhost:4200`
+
+---
+
+## Scanner Integration (Dynamsoft Web TWAIN)
+
+The application utilizes Dynamsoft Web TWAIN to interface natively with hardware scanners (TWAIN/WIA) directly from the browser. Below is the documentation of its capabilities, features, and how its components interact.
+
+### The Resources Folder
+The core of the scanner SDK relies on the `Resources` folder which is mapped in the initializer as `Dynamsoft.DWT.ResourcesPath = '/assets/Resources';`. This directory is crucial because it contains the WebAssembly (WASM) modules, JavaScript drivers (`dynamsoft.webtwain.min.js`), and the Local Service installers required to securely grant the web browser access to local USB scanner hardware.
+
+### Hardware-Level Features
+The Dynamsoft SDK interfaces natively with the physical driver using the `AcquireImageAsync(deviceConfig)` API payload. We can send commands specifically to the hardware:
+
+**Automatic Document Feeder (ADF):**
+ADF is controlled at the hardware level by setting `IfFeederEnabled = true` and `IfAutoFeed = true`. When the front-end scanning component detects `useAdf` is checked, these properties are attached to the `deviceConfig`, instructing the physical scanner to use its top document tray instead of the flatbed. Warning: Forcing this property to false on unsupported flatbed-only scanners may freeze their drivers.
+
+### Software-Level Features (Post-Scan)
+Once an image is scanned, Dynamsoft holds the image in an internal memory buffer. There are two primary ways to interact with it:
+
+#### Option A: The Built-in Image Editor (Modal)
+Dynamsoft includes a "zero-code" pre-built image editor that natively supports cropping, zooming, rotation, and brightness without requiring custom CSS or DOM changes. 
+```typescript
+// Example Implementation
+DWTObject.ShowImageEditor("Image Editor Title", (errCode, errStr) => {
+    if(errCode !== 0) console.error(errStr);
+});
+// The images are automatically updated in the buffer when the modal is closed.
+```
+
+#### Option B: The Embedded Viewer APIs
+To implement a custom UI alongside Dynamsoft, you can rely on the embedded Dynamsoft viewer (`<div id="dwtcontrolContainer"></div>`) rather than building third-party canvas libraries:
+- **Zooming:** Natively supported via the viewer: `DWTObject.Viewer.zoomIn()` and `DWTObject.Viewer.zoomOut()`.
+- **Cropping:** Access the native boundary selection box using `DWTObject.GetSelectionRect(index)` and finalize the crop using `DWTObject.Crop(index, left, top, right, bottom)`.
+- **Brightness:** Adjust buffer brightness mathematically on the backend. Values range from `-1000` to `1000`. 
+  `DWTObject.ChangeBrightness(index, value, successCb, errorCb)`.
+
+### Current Application Implementation Strategy
+While Dynamsoft provides the powerful post-scan Native Viewer APIs listed above, the *current system architecture* intentionally uses Dynamsoft **solely** for hardware communication (`AcquireImageAsync`). 
+
+Immediately upon scanning, the buffer is converted to a standard Blob using `ConvertToBlob()` and unloaded into a custom Angular HTML5 Context `<canvas>` / `ngx-image-cropper` based UI. This abstracts the cropping, scaling (via CSS zoom), and brightness (via CSS filters) entirely away from the TWAIN buffer to give the frontend deeper UI customization and granular styling control over the image editing flow.
 
 ---
 

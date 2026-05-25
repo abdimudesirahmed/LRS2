@@ -20,8 +20,9 @@ public class UploadDocumentDto
     [StringLength(100, ErrorMessage = "Application Registration ID cannot exceed 100 characters")]
     public required string AppRegId { get; set; }
     
-    // UniqueParcelId removed as per requirements (handled by Alfresco/System)
-    // public string? UniqueParcelId { get; set; }
+    [Required(ErrorMessage = "Unique Parcel ID is required")]
+    [StringLength(100, ErrorMessage = "Unique Parcel ID cannot exceed 100 characters")]
+    public required string UniqueParcelId { get; set; }
     
     // File to upload (SRS: User can scan or upload PDF/image)
     [Required(ErrorMessage = "File is required")]

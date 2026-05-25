@@ -15,7 +15,7 @@ export const routes: Routes = [
   {
     path: 'scan',
     canActivate: [authGuard],
-    loadComponent: () => import('./features/scanning/pages/scan/scan.component').then(m => m.ScanComponent)
+    loadComponent: () => import('./popup/popup.component').then(m => m.PopupComponent)
   },
   {
     path: 'documents',

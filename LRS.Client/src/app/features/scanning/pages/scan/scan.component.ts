@@ -1,9 +1,10 @@
-import { Component, OnInit, OnDestroy, AfterViewInit } from '@angular/core';
+import { Component, OnInit, OnDestroy, AfterViewInit, Output, EventEmitter } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ImageCropperComponent, ImageCroppedEvent, ImageTransform } from 'ngx-image-cropper';
 import { DocumentService } from '../../../documents/services/document.service';
 import { AdministrativeSourceTypeService, AdministrativeSourceType } from '../../../documents/services/administrative-source-type.service';
+import { ModalService } from '../../../../shared/modal/modal.service';
 
 declare var Dynamsoft: any;
 
@@ -15,15 +16,22 @@ declare var Dynamsoft: any;
   styleUrl: './scan.component.css'
 })
 export class ScanComponent implements OnInit, OnDestroy {
-  private readonly scanInitTimeoutMs = 15000;
-  private readonly scanAcquireTimeoutMs = 150000; // 2.5 minutes for full ADF batches
-  DWTObject: any = null;
+  @Output() closed = new EventEmitter<void>();
+  @Output() uploadSuccess = new EventEmitter<any>();
 
   appRegId: string = '';
-  // uniqueParcelId: string = ''; // Removed
-  adminSourceTypeId: number = 0;
+  uniqueParcelId: string = '';
   sourceId: number | null = null;
   createdBy: string = '';
+  private readonly scanInitTimeoutMs = 15000;
+  private readonly scanAcquireTimeoutMs = 150000; // 2.5 minutes for full ADF batches
+  private readonly dwtInitRetryMs = 500;
+  private readonly dwtInitMaxRetries = 20;
+  private dwtInitRetries = 0;
+  private dwtReadyHandlerRegistered = false;
+  DWTObject: any = null;
+
+  adminSourceTypeId: number = 0;
 
   // Load administrative source types from API (SRS requirement)
   administrativeSourceTypes: AdministrativeSourceType[] = [];
@@ -44,7 +52,10 @@ export class ScanComponent implements OnInit, OnDestroy {
   isEditingImage: boolean = false;
   canvasRotation: number = 0;
   transform: ImageTransform = {};
-  brightness: number = 100;
+  gammaValue: number = 1.0;
+  private originalBlob: Blob | null = null;
+  private gammaApplyVersion: number = 0;
+  editorImageBase64: string | null = null;
   croppedImageBlob: Blob | null = null;
   croppedImageSrc: string | null = null;
 
@@ -53,17 +64,37 @@ export class ScanComponent implements OnInit, OnDestroy {
   currentEditingIndex: number = 0;
   editedBase64Images: string[] = [];
   isProcessingPdf: boolean = false;
+  previewPageIndex: number = 0;
+  pagePreviewSources: string[] = [];
+  pageImageSources: string[] = [];
+  private pendingCapturePageIndex: number | null = null;
 
   statusMessage: string = '';
   isUploading: boolean = false;
 
   // Form validation
   formErrors: { [key: string]: string } = {};
+  // UI state for attachment list
+  selectedDocument: string | null = null;
 
   constructor(
     private documentService: DocumentService,
-    private adminSourceTypeService: AdministrativeSourceTypeService
+    private adminSourceTypeService: AdministrativeSourceTypeService,
+    private modalService: ModalService
   ) { }
+
+  chooseDocument(docTitle: string) {
+    this.selectedDocument = docTitle;
+    // reset preview when selecting a new document
+    this.resetForm();
+  }
+
+  openExampleModal() {
+    this.modalService.open({
+      title: 'Example Popup',
+      content: '<p>This is an example popup running inside the host app. Close to continue.</p>'
+    });
+  }
 
   ngOnInit(): void {
     this.loadAdministrativeSourceTypes();
@@ -75,8 +106,14 @@ export class ScanComponent implements OnInit, OnDestroy {
 
   private initDynamicWebTwain(): void {
     if (typeof Dynamsoft === 'undefined' || !Dynamsoft.DWT) {
+      if (this.dwtInitRetries < this.dwtInitMaxRetries) {
+        this.dwtInitRetries++;
+        setTimeout(() => this.initDynamicWebTwain(), this.dwtInitRetryMs);
+      }
       return;
     }
+
+    this.dwtInitRetries = 0;
 
     // Explicitly set the absolute path to the resource folder
     Dynamsoft.DWT.ResourcesPath = '/assets/Resources';
@@ -86,10 +123,13 @@ export class ScanComponent implements OnInit, OnDestroy {
     // WebAssembly mode which cannot access local USB scanners.
     Dynamsoft.DWT.UseLocalService = true;
 
-    Dynamsoft.DWT.RegisterEvent('OnWebTwainReady', () => {
-      this.DWTObject = Dynamsoft.DWT.GetWebTwain('dwtcontrolContainer');
-      this.loadScanners();
-    });
+    if (!this.dwtReadyHandlerRegistered) {
+      Dynamsoft.DWT.RegisterEvent('OnWebTwainReady', () => {
+        this.DWTObject = Dynamsoft.DWT.GetWebTwain('dwtcontrolContainer');
+        this.loadScanners();
+      });
+      this.dwtReadyHandlerRegistered = true;
+    }
     if (Dynamsoft.DWT.AutoLoad === false && typeof Dynamsoft.DWT.Load === 'function') {
       Dynamsoft.DWT.Load();
     }
@@ -97,6 +137,8 @@ export class ScanComponent implements OnInit, OnDestroy {
 
   private loadScanners(): void {
     if (!this.DWTObject) return;
+
+    this.scanners = [];
 
     if (typeof this.DWTObject.GetSourceNamesAsync === 'function') {
       this.DWTObject.GetSourceNamesAsync().then((names: string[]) => {
@@ -168,16 +210,37 @@ export class ScanComponent implements OnInit, OnDestroy {
   }
 
   startScan() {
+    // If there's already a captured image, append a new page instead of replacing
+    if (this.hasCapturedImage) {
+      this.appendScan();
+      return;
+    }
+
     this.isScanning = true;
     this.hasScannedImage = false;
     this.hasCapturedImage = false;
     this.scannedImageCount = 0;
     this.currentEditingIndex = 0;
     this.editedBase64Images = [];
+    this.pageImageSources = [];
+    this.previewPageIndex = 0;
+    for (const source of this.pagePreviewSources) {
+      if (source.startsWith('blob:')) {
+        URL.revokeObjectURL(source);
+      }
+    }
+    this.pagePreviewSources = [];
     if (this.DWTObject) {
        this.DWTObject.RemoveAllImages();
     }
     this.statusMessage = 'Initializing scanner...';
+
+    if (!this.DWTObject) {
+      this.initDynamicWebTwain();
+      this.statusMessage = 'Preparing scanner service...';
+      setTimeout(() => this.performScan(true), 700);
+      return;
+    }
 
     this.performScan(true);
   }
@@ -186,11 +249,19 @@ export class ScanComponent implements OnInit, OnDestroy {
     this.isScanning = true;
     this.hasScannedImage = false;
     this.hasCapturedImage = false;
+    this.pendingCapturePageIndex = this.pagePreviewSources.length;
     // We intentionally keep editedBase64Images so we can append to the document
     this.statusMessage = 'Initializing scanner to add page...';
     
     if (this.DWTObject) {
        this.DWTObject.RemoveAllImages(); // Clear buffer so DWT only contains the NEWly scanned pages
+    }
+
+    if (!this.DWTObject) {
+      this.initDynamicWebTwain();
+      this.statusMessage = 'Preparing scanner service...';
+      setTimeout(() => this.performScan(true), 700);
+      return;
     }
 
     this.performScan(true);
@@ -331,17 +402,25 @@ export class ScanComponent implements OnInit, OnDestroy {
 
   captureImage(index: number = 0) {
     if (this.DWTObject && this.DWTObject.HowManyImagesInBuffer > index) {
-      this.currentEditingIndex = index;
+      const pageIndex = this.pendingCapturePageIndex ?? index;
+      this.pendingCapturePageIndex = null;
+      this.currentEditingIndex = pageIndex;
+      this.originalBlob = null;
       this.DWTObject.ConvertToBlob(
         [index],
         Dynamsoft.DWT.EnumDWT_ImageType.IT_PNG,
         (result: Blob) => {
-          const fileName = `Scan_Page_${index + 1}.png`;
+          const fileName = `Scan_Page_${pageIndex + 1}.png`;
           this.uploadedFile = new File([result], fileName, { type: 'image/png' });
-          this.capturedImageSrc = URL.createObjectURL(result);
+          this.originalBlob = result;
+          this.blobToDataUrl(result).then((dataUrl) => {
+            this.editorImageBase64 = dataUrl;
+            this.capturedImageSrc = dataUrl;
+            this.pageImageSources[pageIndex] = dataUrl;
+          });
           this.hasCapturedImage = true;
           this.isEditingImage = true; // Enter edit mode immediately
-          this.statusMessage = `Editing Page ${this.currentEditingIndex + 1} of ${this.scannedImageCount}.`;
+          this.statusMessage = `Editing Page ${this.currentEditingIndex + 1} of ${this.scannedImageCount || (this.currentEditingIndex + 1)}.`;
           
           if (index === 0) {
              this.isScanning = false;
@@ -394,17 +473,28 @@ export class ScanComponent implements OnInit, OnDestroy {
   onFileSelected(event: any) {
     const file = event.target.files[0];
     if (file) {
+      this.originalBlob = null;
       this.uploadedFile = file;
       this.scannedImageCount = 1; // It's just a single file upload context
       if (file.type === 'application/pdf') {
          // Cannot edit PDF via ngx-image-cropper
          this.hasCapturedImage = true;
          this.isEditingImage = false;
+         this.editorImageBase64 = null;
          this.capturedImageSrc = null;
+        this.pageImageSources = [];
          this.statusMessage = 'PDF selected. Ready to upload.';
       } else {
          const reader = new FileReader();
-         reader.onload = (e: any) => this.capturedImageSrc = e.target.result;
+        reader.onload = (e: any) => {
+          const dataUrl = String(e.target.result ?? '');
+          this.editorImageBase64 = dataUrl;
+          this.capturedImageSrc = dataUrl;
+          this.originalBlob = file;
+          this.pagePreviewSources = [dataUrl];
+         this.pageImageSources = [dataUrl];
+          this.previewPageIndex = 0;
+        };
          reader.readAsDataURL(file);
          this.hasCapturedImage = true;
          this.isEditingImage = true; // Enter edit mode immediately
@@ -446,6 +536,66 @@ export class ScanComponent implements OnInit, OnDestroy {
     }
   }
 
+  rotateCanvasLeft(): void {
+    this.canvasRotation--;
+  }
+
+  rotateCanvasRight(): void {
+    this.canvasRotation++;
+  }
+
+  toggleFlipHorizontal(): void {
+    this.transform = {
+      ...this.transform,
+      flipH: !this.transform.flipH
+    };
+  }
+
+  toggleFlipVertical(): void {
+    this.transform = {
+      ...this.transform,
+      flipV: !this.transform.flipV
+    };
+  }
+
+  resetFitAndScale(): void {
+    this.transform = {};
+    this.canvasRotation = 0;
+  }
+
+  resetScaleToOne(): void {
+    this.transform = {
+      ...this.transform,
+      scale: 1
+    };
+  }
+
+  resetCurrentEdit(): void {
+    const sourceBlob = this.originalBlob || this.uploadedFile;
+    if (!sourceBlob) {
+      this.statusMessage = 'No original image available to reset.';
+      return;
+    }
+
+    this.canvasRotation = 0;
+    this.transform = {};
+    this.gammaValue = 1.0;
+    this.croppedImageBlob = sourceBlob;
+
+    this.blobToDataUrl(sourceBlob)
+      .then((dataUrl) => {
+        this.editorImageBase64 = dataUrl;
+        this.capturedImageSrc = dataUrl;
+        this.croppedImageSrc = dataUrl;
+        this.isEditingImage = true;
+        this.statusMessage = 'Current edit reset to original image.';
+      })
+      .catch((error) => {
+        console.error('Failed to reset current edit:', error);
+        this.statusMessage = 'Failed to reset the current edit.';
+      });
+  }
+
   async confirmEdit() {
     if (!this.croppedImageBlob) {
       this.statusMessage = 'No cropped image available to confirm.';
@@ -453,30 +603,41 @@ export class ScanComponent implements OnInit, OnDestroy {
     }
     this.statusMessage = 'Applying enhancements...';
     try {
-      const finalBlob = await this.applyBrightness(this.croppedImageBlob, this.brightness);
-      
-      // Store edited page
+      const finalBlob = this.croppedImageBlob;
+
       const base64Str = await this.blobToBase64(finalBlob);
-      this.editedBase64Images.push(base64Str);
-      
-      if (this.currentEditingIndex + 1 < this.scannedImageCount) {
-         // Reset tools and move to next page
-         this.canvasRotation = 0;
-         this.transform = {};
-         this.brightness = 100;
-         this.captureImage(this.currentEditingIndex + 1);
+      const previewUrl = URL.createObjectURL(finalBlob);
+      const previousPreviewUrl = this.pagePreviewSources[this.currentEditingIndex];
+
+      if (previousPreviewUrl?.startsWith('blob:')) {
+        URL.revokeObjectURL(previousPreviewUrl);
+      }
+
+      this.editedBase64Images[this.currentEditingIndex] = base64Str;
+      this.pagePreviewSources[this.currentEditingIndex] = previewUrl;
+      this.pageImageSources[this.currentEditingIndex] = await this.blobToDataUrl(finalBlob);
+      this.previewPageIndex = this.currentEditingIndex;
+      this.capturedImageSrc = previewUrl;
+
+      const fileName = this.uploadedFile?.name || `Processed_${new Date().getTime()}.png`;
+      this.uploadedFile = new File([finalBlob], fileName, { type: finalBlob.type || 'image/png' });
+
+      this.canvasRotation = 0;
+      this.transform = {};
+      this.gammaValue = 1.0;
+      this.editorImageBase64 = await this.blobToDataUrl(finalBlob);
+      this.croppedImageSrc = previewUrl;
+      this.hasCapturedImage = true;
+      this.croppedImageBlob = null;
+
+      const nextEditingIndex = this.currentEditingIndex + 1;
+      if (nextEditingIndex < this.scannedImageCount) {
+        this.isEditingImage = true;
+        this.statusMessage = `Page ${this.currentEditingIndex + 1} saved. Editing page ${nextEditingIndex + 1}.`;
+        this.captureImage(nextEditingIndex);
       } else {
-         // All pages in THIS batch edited!
-         if (this.editedBase64Images.length > 1) { // Check total edited vs total scanned so appending creates PDF
-            await this.generateMultiPagePdf();
-         } else {
-            // Single page upload flow
-            const fileName = this.uploadedFile?.name || `Processed_${new Date().getTime()}.png`;
-            this.uploadedFile = new File([finalBlob], fileName, { type: finalBlob.type || 'image/png' });
-            this.capturedImageSrc = URL.createObjectURL(finalBlob);
-            this.isEditingImage = false;
-            this.statusMessage = 'Document confirmed. Ready to upload.';
-         }
+        this.isEditingImage = true;
+        this.statusMessage = `Page ${this.currentEditingIndex + 1} saved. No more pages to edit.`;
       }
     } catch (e: any) {
       this.statusMessage = 'Failed to apply enhancements: ' + (e?.message || 'Unknown error');
@@ -495,8 +656,7 @@ export class ScanComponent implements OnInit, OnDestroy {
     });
   }
 
-  private async generateMultiPagePdf() {
-    this.isProcessingPdf = true;
+  private async generateMultiPagePdf(): Promise<File> {
     this.statusMessage = 'Generating multi-page PDF...';
     
     // Clear unedited original images
@@ -516,19 +676,14 @@ export class ScanComponent implements OnInit, OnDestroy {
        // Convert loaded images natively into a PDF
        const indices = Array.from({length: loadedCount}, (_, i) => i);
        
-       this.DWTObject.ConvertToBlob(indices, Dynamsoft.DWT.EnumDWT_ImageType.IT_PDF, (pdfBlob: Blob) => {
-          this.uploadedFile = new File([pdfBlob], `ScannedDocument_${new Date().getTime()}.pdf`, { type: 'application/pdf' });
-          this.capturedImageSrc = null; // Don't try to show a PDF in the <img> tag
-          this.isEditingImage = false;
-          this.isProcessingPdf = false;
-          this.statusMessage = `All ${loadedCount} pages processed and bundled into a PDF. Ready to upload.`;
-       }, (errCode: number, errStr: string) => {
-          throw new Error(errStr);
+       const pdfBlob = await new Promise<Blob>((resolve, reject) => {
+         this.DWTObject.ConvertToBlob(indices, Dynamsoft.DWT.EnumDWT_ImageType.IT_PDF, (blob: Blob) => resolve(blob), (errCode: number, errStr: string) => reject(new Error(errStr)));
        });
+
+       return new File([pdfBlob], `ScannedDocument_${new Date().getTime()}.pdf`, { type: 'application/pdf' });
        
     } catch (error: any) {
-       this.statusMessage = 'Error generating PDF: ' + error.message;
-       this.isProcessingPdf = false;
+       throw new Error('Error generating PDF: ' + error.message);
     }
   }
 
@@ -538,39 +693,289 @@ export class ScanComponent implements OnInit, OnDestroy {
     }
   }
 
-  private applyBrightness(imageBlob: Blob, brightness: number): Promise<Blob> {
-    return new Promise((resolve, reject) => {
-      const img = new Image();
-      const url = URL.createObjectURL(imageBlob);
-      img.onload = () => {
-        URL.revokeObjectURL(url);
-        const canvas = document.createElement('canvas');
-        canvas.width = img.width;
-        canvas.height = img.height;
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-          // Apply brightness via CSS filter logic
-          ctx.filter = `brightness(${brightness}%)`;
-          ctx.drawImage(img, 0, 0);
-          canvas.toBlob((blob) => {
-            if (blob) {
-              resolve(blob);
-            } else {
-              reject(new Error('Canvas toBlob failed'));
-            }
-          }, imageBlob.type || 'image/png');
-        } else {
-          reject(new Error('Could not get Canvas 2D context'));
+  rejectScans(): void {
+    if (!this.hasCapturedImage && this.pagePreviewSources.length === 0) {
+      this.statusMessage = 'No scanned pages to reject.';
+      return;
+    }
+
+    if (!confirm('Reject scanned pages? This will remove all scanned pages but keep your selected document and settings.')) {
+      return;
+    }
+
+    // Revoke any blob preview URLs
+    for (const source of this.pagePreviewSources) {
+      if (source && source.startsWith('blob:')) {
+        try { URL.revokeObjectURL(source); } catch (e) { }
+      }
+    }
+
+    // Clear only the scanned/image state — keep form selections
+    this.pagePreviewSources = [];
+    this.pageImageSources = [];
+    this.editedBase64Images = [];
+    this.previewPageIndex = 0;
+    this.currentEditingIndex = 0;
+    this.scannedImageCount = 0;
+    this.hasCapturedImage = false;
+    this.isEditingImage = false;
+    this.capturedImageSrc = null;
+    this.editorImageBase64 = null;
+    this.croppedImageBlob = null;
+    this.croppedImageSrc = null;
+
+    if (this.DWTObject) {
+      try { this.DWTObject.RemoveAllImages(); } catch (e) { }
+    }
+
+    this.statusMessage = 'Scanned pages rejected.';
+  }
+
+  deleteCurrentPage(): void {
+    if (!this.hasCapturedImage) {
+      return;
+    }
+
+    if (!confirm('Delete only the current page?')) {
+      return;
+    }
+
+    // If we are actively editing a scanned batch page, skip this page and continue.
+    if (this.isEditingImage && this.scannedImageCount > 0) {
+      const hasNextScannedPage = this.currentEditingIndex + 1 < this.scannedImageCount;
+      if (hasNextScannedPage) {
+        const deletedPageNumber = this.currentEditingIndex + 1;
+        this.captureImage(this.currentEditingIndex + 1);
+        this.statusMessage = `Page ${deletedPageNumber} deleted. Editing next page.`;
+        return;
+      }
+
+      // Last scanned page in the batch being edited.
+      if (this.pagePreviewSources.length > 0) {
+        this.isEditingImage = false;
+        this.previewPageIndex = Math.min(this.previewPageIndex, this.pagePreviewSources.length - 1);
+        this.statusMessage = 'Current page deleted.';
+        return;
+      }
+
+      this.resetForm();
+      this.statusMessage = 'Current page deleted. No pages left.';
+      return;
+    }
+
+    if (this.pagePreviewSources.length > 0) {
+      this.removePageAtIndex(this.previewPageIndex);
+
+      if (this.pagePreviewSources.length === 0) {
+        this.resetForm();
+        this.statusMessage = 'Current page deleted. No pages left.';
+        return;
+      }
+
+      this.previewPageIndex = Math.min(this.previewPageIndex, this.pagePreviewSources.length - 1);
+      this.scannedImageCount = this.pagePreviewSources.length;
+      this.statusMessage = 'Current page deleted.';
+      return;
+    }
+
+    // Fallback for single file/PDF scenarios where no page array exists.
+    this.resetForm();
+    this.statusMessage = 'Current page deleted.';
+  }
+
+  cleanAllPages(): void {
+    if (!this.hasCapturedImage) {
+      return;
+    }
+
+    if (!confirm('Clean all pages? This will remove the entire document.')) {
+      return;
+    }
+
+    this.resetForm();
+    this.statusMessage = 'All pages cleaned.';
+  }
+
+  private removePageAtIndex(index: number): void {
+    if (index < 0 || index >= this.pagePreviewSources.length) {
+      return;
+    }
+
+    const source = this.pagePreviewSources[index];
+    if (source && source.startsWith('blob:')) {
+      URL.revokeObjectURL(source);
+    }
+
+    this.pagePreviewSources.splice(index, 1);
+
+    if (index < this.editedBase64Images.length) {
+      this.editedBase64Images.splice(index, 1);
+    }
+  }
+
+  onGammaInput(): void {
+    if (this.gammaValue < 0.3) {
+      this.gammaValue = 0.3;
+    }
+    if (this.gammaValue > 2.5) {
+      this.gammaValue = 2.5;
+    }
+    this.statusMessage = `Preview gamma: ${this.gammaValue.toFixed(1)} (release slider to apply).`;
+  }
+
+applyBrightness(): void {
+    const applyVersion = ++this.gammaApplyVersion;
+
+    if (this.gammaValue < 0.3) this.gammaValue = 0.3;
+    if (this.gammaValue > 2.5) this.gammaValue = 2.5;
+
+    // If DWT buffer is available and contains images, operate on the current buffer image
+    if (this.DWTObject && this.DWTObject.HowManyImagesInBuffer > 0) {
+      const index = this.DWTObject.CurrentImageIndexInBuffer;
+      if (index < 0) {
+        alert('No image selected');
+        return;
+      }
+
+      this.DWTObject.ConvertToBlob(
+        [index],
+        Dynamsoft.DWT.EnumDWT_ImageType.IT_PNG,
+        (result: Blob) => {
+          const sourceBlob = this.originalBlob || result;
+          if (!this.originalBlob) this.originalBlob = result;
+
+          this.applyGammaCorrection(sourceBlob, this.gammaValue)
+            .then((correctedBlob) => {
+              if (applyVersion !== this.gammaApplyVersion) return;
+
+              // Replace the buffer image with corrected image
+              try {
+                this.DWTObject.LoadImageFromBinary(
+                  correctedBlob,
+                  () => {
+                    try { this.DWTObject.RemoveImage(index); } catch (e) {}
+                    try { this.DWTObject.CurrentImageIndexInBuffer = this.DWTObject.HowManyImagesInBuffer - 1; } catch (e) {}
+                  },
+                  (errorCode: number, errorString: string) => {
+                    console.error('Failed to load corrected image: ', errorString);
+                  }
+                );
+              } catch (e) {
+                console.error('DWT update failed:', e);
+              }
+
+              // Update preview for immediate feedback
+              this.blobToDataUrl(correctedBlob).then((dataUrl) => {
+                if (applyVersion !== this.gammaApplyVersion) return;
+                this.croppedImageBlob = correctedBlob;
+                this.croppedImageSrc = dataUrl;
+                this.editorImageBase64 = dataUrl;
+                this.capturedImageSrc = dataUrl;
+                this.statusMessage = `Gamma applied (${this.gammaValue.toFixed(1)}).`;
+              }).catch((e) => console.error('Failed to create preview data URL:', e));
+            })
+            .catch((error) => {
+              console.error('Gamma correction failed:', error);
+            });
+        },
+        (errorCode: number, errorString: string) => {
+          console.error('Failed to extract image for brightness adjustment: ', errorString);
         }
-      };
-      img.onerror = () => {
-        URL.revokeObjectURL(url);
-        reject(new Error('Failed to load image for processing'));
-      };
-      img.src = url;
+      );
+
+      return;
+    }
+
+    // Non-DWT flow: use uploaded/cropped/original blob and apply gamma correction
+    const sourceBlob = this.croppedImageBlob || this.uploadedFile || this.originalBlob || null;
+    if (!sourceBlob) {
+      alert('No image available to apply brightness to.');
+      return;
+    }
+
+    this.applyGammaCorrection(sourceBlob, this.gammaValue)
+      .then((correctedBlob) => {
+        if (applyVersion !== this.gammaApplyVersion) return;
+
+        const fileName = this.uploadedFile?.name || `Processed_${Date.now()}.png`;
+        this.uploadedFile = new File([correctedBlob], fileName, { type: 'image/png' });
+
+        this.blobToDataUrl(correctedBlob).then((dataUrl) => {
+          if (applyVersion !== this.gammaApplyVersion) return;
+          this.editorImageBase64 = dataUrl;
+          this.capturedImageSrc = dataUrl;
+          this.croppedImageBlob = correctedBlob;
+          this.croppedImageSrc = dataUrl;
+          this.statusMessage = `Gamma applied (${this.gammaValue.toFixed(1)}).`;
+        }).catch((e) => console.error('Failed to convert corrected blob to data URL:', e));
+      })
+      .catch((error) => {
+        console.error('Gamma correction failed:', error);
+      });
+  }
+
+  private blobToDataUrl(blob: Blob): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ''));
+      reader.onerror = () => reject(new Error('Failed to convert blob to data URL'));
+      reader.readAsDataURL(blob);
     });
   }
 
+ private applyGammaCorrection(imageBlob: Blob, gamma: number): Promise<Blob> {
+  return new Promise((resolve, reject) => {
+
+    const img = new Image();
+    const url = URL.createObjectURL(imageBlob);
+
+    img.onload = () => {
+
+      URL.revokeObjectURL(url);
+
+      const canvas = document.createElement('canvas');
+      canvas.width = img.width;
+      canvas.height = img.height;
+
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return reject('No canvas context');
+
+      ctx.drawImage(img, 0, 0);
+
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const data = imageData.data;
+
+      // LUT
+      const lut = new Uint8ClampedArray(256);
+      for (let i = 0; i < 256; i++) {
+        lut[i] = Math.min(
+  255,
+  Math.max(
+    0,
+    Math.pow(i / 255, 1 / gamma) * 255
+  )
+);
+      }
+
+      // APPLY
+      for (let i = 0; i < data.length; i += 4) {
+        data[i]     = lut[data[i]];
+        data[i + 1] = lut[data[i + 1]];
+        data[i + 2] = lut[data[i + 2]];
+      }
+
+      ctx.putImageData(imageData, 0, 0);
+
+      canvas.toBlob(blob => {
+        if (blob) resolve(blob);
+        else reject('Blob failed');
+      }, 'image/png');
+    };
+
+    img.onerror = () => reject('Image load failed');
+    img.src = url;
+  });
+}
   validateForm(): boolean {
     this.formErrors = {};
 
@@ -578,22 +983,57 @@ export class ScanComponent implements OnInit, OnDestroy {
       this.formErrors['file'] = 'Please scan or select a document to upload.';
     }
 
-    if (!this.appRegId || this.appRegId.trim() === '') {
-      this.formErrors['appRegId'] = 'Application Registration ID is required.';
-    }
-
-    // if (!this.uniqueParcelId || this.uniqueParcelId.trim() === '') {
-    //   this.formErrors['uniqueParcelId'] = 'Unique Parcel ID is required.';
-    // }
-
-    if (!this.adminSourceTypeId || this.adminSourceTypeId === 0) {
-      this.formErrors['adminSourceTypeId'] = 'Administrative Source Type is required.';
+    if (!this.uniqueParcelId || this.uniqueParcelId.trim() === '') {
+      this.formErrors['uniqueParcelId'] = 'Unique Parcel ID is required.';
     }
 
     return Object.keys(this.formErrors).length === 0;
   }
 
-  uploadDocument(): void {
+  private buildAppRegId(): string {
+    return `scan-${Date.now()}`;
+  }
+
+  showPreviousPreviewPage(): void {
+    if (this.previewPageIndex > 0) {
+      this.loadPageForNavigation(this.previewPageIndex - 1);
+    }
+  }
+
+  showNextPreviewPage(): void {
+    if (this.previewPageIndex < this.pagePreviewSources.length - 1) {
+      this.loadPageForNavigation(this.previewPageIndex + 1);
+    }
+  }
+
+  get currentPreviewSource(): string | null {
+    return this.pageImageSources[this.previewPageIndex] || this.pagePreviewSources[this.previewPageIndex] || this.capturedImageSrc;
+  }
+
+  selectPreviewPage(index: number): void {
+    this.loadPageForNavigation(index);
+  }
+
+  private loadPageForNavigation(index: number): void {
+    if (index < 0 || index >= this.pagePreviewSources.length) {
+      return;
+    }
+
+    this.previewPageIndex = index;
+    this.currentEditingIndex = index;
+
+    const pageSource = this.pageImageSources[index] || null;
+    if (pageSource) {
+      this.editorImageBase64 = pageSource;
+      this.capturedImageSrc = pageSource;
+      this.croppedImageSrc = pageSource;
+      this.hasCapturedImage = true;
+      this.isEditingImage = true;
+      this.statusMessage = `Page ${index + 1} of ${this.pagePreviewSources.length} loaded.`;
+    }
+  }
+
+  async uploadDocument(): Promise<void> {
     // SRS User Story 1: Metadata form is mandatory
     if (!this.validateForm()) {
       this.statusMessage = 'Please fill in all required fields.';
@@ -605,40 +1045,59 @@ export class ScanComponent implements OnInit, OnDestroy {
       return;
     }
 
+    const needsCollection = this.pagePreviewSources.length > 1 || this.editedBase64Images.length > 1;
+
+    try {
+      if (needsCollection) {
+        this.isProcessingPdf = true;
+        this.statusMessage = 'Collecting pages into PDF...';
+        this.uploadedFile = await this.generateMultiPagePdf();
+      }
+    } catch (error: any) {
+      this.isProcessingPdf = false;
+      this.statusMessage = error?.message || 'Error generating PDF.';
+      return;
+    }
+
+    this.isProcessingPdf = false;
     this.isUploading = true;
     this.statusMessage = 'Uploading document...';
 
     const formData = new FormData();
     formData.append('File', this.uploadedFile);
-    formData.append('AppRegId', this.appRegId.trim());
-    // formData.append('UniqueParcelId', this.uniqueParcelId.trim());
-    formData.append('AdministrativeSourceTypeId', this.adminSourceTypeId.toString());
-
+    
+    const finalAppRegId = this.appRegId ? this.appRegId.trim() : this.buildAppRegId();
+    formData.append('AppRegId', finalAppRegId);
+    
+    const finalUniqueParcelId = this.uniqueParcelId ? this.uniqueParcelId.trim() : finalAppRegId;
+    formData.append('UniqueParcelId', finalUniqueParcelId);
+    
     if (this.sourceId) {
       formData.append('SourceId', this.sourceId.toString());
     }
-
     if (this.createdBy) {
       formData.append('CreatedBy', this.createdBy.trim());
     }
+    formData.append('AdministrativeSourceTypeId', this.adminSourceTypeId.toString());
 
     this.documentService.uploadDocument(formData).subscribe({
       next: (response) => {
         console.log('Upload success', response);
         this.statusMessage = `Success! Document uploaded. Document ID: ${response.id}`;
         this.isUploading = false;
+        
+        // Emit success and auto-close after 1.5s
+        this.uploadSuccess.emit(response);
         this.resetForm();
 
-        // Show success message for 3 seconds, then clear
         setTimeout(() => {
-          if (this.statusMessage.includes('Success!')) {
-            this.statusMessage = '';
-          }
-        }, 3000);
+          this.closed.emit();
+        }, 1500);
       },
       error: (err) => {
         console.error('Upload failed', err);
         this.isUploading = false;
+        this.isProcessingPdf = false;
 
         let errorMessage = 'Upload failed. ';
         if (err.error) {
@@ -667,7 +1126,9 @@ export class ScanComponent implements OnInit, OnDestroy {
     this.isEditingImage = false;
     this.canvasRotation = 0;
     this.transform = {};
-    this.brightness = 100;
+    this.gammaValue = 1.0;
+    this.originalBlob = null;
+    this.editorImageBase64 = null;
     this.croppedImageBlob = null;
     this.croppedImageSrc = null;
     this.capturedImageSrc = null;
@@ -676,9 +1137,20 @@ export class ScanComponent implements OnInit, OnDestroy {
     this.scannedImageCount = 0;
     this.currentEditingIndex = 0;
     this.editedBase64Images = [];
+    this.previewPageIndex = 0;
+    for (const source of this.pagePreviewSources) {
+      if (source.startsWith('blob:')) {
+        URL.revokeObjectURL(source);
+      }
+    }
+    this.pagePreviewSources = [];
     if (this.DWTObject) {
        this.DWTObject.RemoveAllImages();
     }
     // Keep form fields for convenience (user might upload multiple documents)
+  }
+
+  closeScanner(): void {
+    this.closed.emit();
   }
 }

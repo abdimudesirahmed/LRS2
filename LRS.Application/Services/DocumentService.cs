@@ -111,8 +111,8 @@ public class DocumentService : IDocumentService
         string? nodeId = null;
         try
         {
-            _logger.LogInformation("Uploading file to Alfresco for AppRegId={AppRegId}, File={FileName}", dto.AppRegId, dto.File.FileName);
-            nodeId = await _alfrescoService.UploadDocumentAsync(dto.File, dto.AppRegId);
+            _logger.LogInformation("Uploading file to Alfresco for ParcelId={ParcelId}, AppRegId={AppRegId}, File={FileName}", dto.UniqueParcelId, dto.AppRegId, dto.File.FileName);
+            nodeId = await _alfrescoService.UploadDocumentAsync(dto.File, dto.AppRegId, dto.UniqueParcelId);
             _logger.LogInformation("Alfresco returned nodeId={NodeId}", nodeId);
         }
         catch (Exception ex)
@@ -128,11 +128,17 @@ public class DocumentService : IDocumentService
         }
 
         //3. Handle versioning
-        var existingDoc = await _unitOfWork.Documents.GetLatestBySourceAndTypeAsync(source.Id, dto.AdministrativeSourceTypeId);
+        var existingDoc = await _unitOfWork.Documents.GetLatestByParcelAndTypeAsync(dto.UniqueParcelId, dto.AdministrativeSourceTypeId);
         if (existingDoc != null)
         {
             existingDoc.IsVoid = true;
             _unitOfWork.Documents.Update(existingDoc);
+
+            if (!string.IsNullOrEmpty(existingDoc.AlfDocumentId))
+            {
+                var newName = $"[VOID]_{existingDoc.DocumentName?.Replace(" ", "")}_{DateTime.UtcNow:yyyyMMddHHmmss}";
+                await _alfrescoService.RenameNodeAsync(existingDoc.AlfDocumentId, newName);
+            }
         }
 
         //4. Create and save Document metadata
@@ -140,7 +146,7 @@ public class DocumentService : IDocumentService
         {
             SourceId = source.Id,
             AppRegId = dto.AppRegId,
-            UniqueParcelId = string.Empty,
+            UniqueParcelId = dto.UniqueParcelId,
             AlfDocumentId = nodeId,
             SubmissionDate = DateTime.UtcNow,
             CreatedBy = dto.CreatedBy ?? "system",
@@ -193,24 +199,15 @@ public class DocumentService : IDocumentService
         if (document == null) throw new FileNotFoundException("Document not found");
         if (string.IsNullOrEmpty(document.AlfDocumentId)) throw new FileNotFoundException("Document has no content ID");
 
-        var stream = await _alfrescoService.GetDocumentStreamAsync(document.AlfDocumentId);
+        var (stream, alfrescoContentType) = await _alfrescoService.GetDocumentStreamAsync(document.AlfDocumentId);
 
-        // Determine content type from file extension when possible
-        var fileName = document.DocumentName ?? "document.pdf";
-        string contentType = "application/octet-stream";
-        try
-        {
-            // Use ASP.NET Core provider to map extensions to MIME types
-            var provider = new Microsoft.AspNetCore.StaticFiles.FileExtensionContentTypeProvider();
-            if (!provider.TryGetContentType(fileName, out contentType))
-            {
-                contentType = "application/octet-stream";
-            }
-        }
-        catch
-        {
-            contentType = "application/octet-stream";
-        }
+        var fileName = document.DocumentName ?? "document";
+        string contentType = alfrescoContentType ?? "application/pdf";
+        
+        // Add extension to fileName if missing based on contentType
+        if (contentType == "application/pdf" && !fileName.EndsWith(".pdf")) fileName += ".pdf";
+        else if (contentType == "image/png" && !fileName.EndsWith(".png")) fileName += ".png";
+        else if (contentType == "image/jpeg" && !fileName.EndsWith(".jpg")) fileName += ".jpg";
 
         return (stream, contentType, fileName);
     }
