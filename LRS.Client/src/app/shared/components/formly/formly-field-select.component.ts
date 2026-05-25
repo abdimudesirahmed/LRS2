@@ -13,16 +13,18 @@ import { FieldType, FieldTypeConfig, FormlyModule } from '@ngx-formly/core';
         {{ props.label }}
         <span *ngIf="props.required" class="required">*</span>:
       </label>
-      <select
-        [id]="id"
-        [formControl]="formControl"
-        [formlyAttributes]="field"
-      >
-        <option [value]="0" disabled>{{ props.placeholder || 'Select an option...' }}</option>
-        <option *ngFor="let option of selectOptions" [value]="option.value">
-          {{ option.label }}
-        </option>
-      </select>
+      <div class="select-wrapper">
+        <select
+          [id]="id"
+          [formControl]="formControl"
+          [formlyAttributes]="field"
+        >
+          <option [value]="0" disabled>{{ props.placeholder || 'Select an option...' }}</option>
+          <option *ngFor="let option of selectOptions" [value]="option.value">
+            {{ option.label }}
+          </option>
+        </select>
+      </div>
       <span class="loading" *ngIf="props['loading']">{{ props['loadingMessage'] || 'Loading...' }}</span>
       <span class="error" *ngIf="showError">
         <formly-validation-message [field]="field"></formly-validation-message>

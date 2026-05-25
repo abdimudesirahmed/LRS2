@@ -11,7 +11,7 @@ import { FieldType, FieldTypeConfig, FormlyModule } from '@ngx-formly/core';
     <div class="form-group">
       <label [for]="id">
         {{ props.label }}
-        <span *ngIf="props.required" class="required">*</span>:
+        <span *ngIf="props.required" class="required-asterisk">*</span>
       </label>
       <input
         [type]="props.type || 'text'"

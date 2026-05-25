@@ -27,6 +27,12 @@ export class DocumentService {
     return this.http.post<DocumentResponse>(`${this.apiUrl}/upload`, formData);
   }
 
+  checkDuplicate(parcelId: string, adminSourceTypeId: number): Observable<DocumentResponse | null> {
+    return this.http.get<DocumentResponse | null>(`${this.apiUrl}/check-duplicate`, {
+      params: { parcelId, adminSourceTypeId: adminSourceTypeId.toString() }
+    });
+  }
+
   getDocumentsBySource(sourceId: number): Observable<DocumentResponse[]> {
     return this.http.get<DocumentResponse[]>(`${this.apiUrl}/source/${sourceId}`);
   }

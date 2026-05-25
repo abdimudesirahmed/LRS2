@@ -62,4 +62,18 @@ public class DocumentsController : ControllerBase
         var docs = await _documentService.GetDocumentsBySourceIdAsync(sourceId);
         return Ok(docs);
     }
+
+    /// <summary>
+    /// Checks if a duplicate document exists for a given parcel ID and administrative source type.
+    /// </summary>
+    [HttpGet("check-duplicate")]
+    public async Task<IActionResult> CheckDuplicate([FromQuery] string parcelId, [FromQuery] int adminSourceTypeId)
+    {
+        if (string.IsNullOrEmpty(parcelId) || adminSourceTypeId <= 0)
+        {
+            return BadRequest("Invalid parcel ID or administrative source type ID.");
+        }
+        var result = await _documentService.GetLatestByParcelAndTypeAsync(parcelId, adminSourceTypeId);
+        return Ok(result);
+    }
 }

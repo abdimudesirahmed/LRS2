@@ -5,82 +5,8 @@
       <p class="form-subtitle">Fill in the required application details, then attach or scan your document.</p>
     </div>
 
-    <form (ngSubmit)="uploadDocument()" #metaForm="ngForm">
-      
-      <!-- Administrative Source Type selection -->
-      <div class="form-group">
-        <label for="adminSourceType">Administrative Source Type <span class="required-asterisk">*</span></label>
-        <div class="select-wrapper">
-          <select 
-            id="adminSourceType" 
-            [(ngModel)]="adminSourceTypeId" 
-            name="adminSourceType" 
-            [disabled]="isLoadingTypes || isUploading"
-            required>
-            <option [value]="0" disabled>Select a document type...</option>
-            <option *ngFor="let type of administrativeSourceTypes" [value]="type.id">
-              {{ type.englishValue }}
-            </option>
-          </select>
-        </div>
-        <span class="field-error" *ngIf="formErrors['adminSourceTypeId']">{{ formErrors['adminSourceTypeId'] }}</span>
-        <span class="loading-indicator" *ngIf="isLoadingTypes">Loading document types...</span>
-      </div>
-
-      <!-- Application and Parcel ID fields -->
-      <div class="form-row">
-        <!-- Application Registration ID field -->
-        <div class="form-group">
-          <label for="appRegId">Application Registration ID <span class="required-asterisk">*</span></label>
-          <input 
-            type="text" 
-            id="appRegId" 
-            [(ngModel)]="appRegId" 
-            name="appRegId" 
-            placeholder="e.g. appReg1000123"
-            [disabled]="isUploading"
-            required />
-          <span class="field-error" *ngIf="formErrors['appRegId']">{{ formErrors['appRegId'] }}</span>
-        </div>
-
-        <!-- Unique Parcel ID field -->
-        <div class="form-group">
-          <label for="uniqueParcelId">Unique Parcel ID <span class="required-asterisk">*</span></label>
-          <input 
-            type="text" 
-            id="uniqueParcelId" 
-            [(ngModel)]="uniqueParcelId" 
-            name="uniqueParcelId" 
-            placeholder="e.g. parcel-12345"
-            [disabled]="isUploading"
-            required />
-          <span class="field-error" *ngIf="formErrors['uniqueParcelId']">{{ formErrors['uniqueParcelId'] }}</span>
-        </div>
-      </div>
-
-      <!-- Optional fields (Source ID & Created By) -->
-      <div class="form-row">
-        <div class="form-group">
-          <label for="sourceId">Source ID (Optional)</label>
-          <input 
-            type="number" 
-            id="sourceId" 
-            [(ngModel)]="sourceId" 
-            name="sourceId" 
-            placeholder="New Source"
-            [disabled]="isUploading" />
-        </div>
-        <div class="form-group">
-          <label for="createdBy">Created By (Optional)</label>
-          <input 
-            type="text" 
-            id="createdBy" 
-            [(ngModel)]="createdBy" 
-            name="createdBy" 
-            placeholder="Your name or ID"
-            [disabled]="isUploading" />
-        </div>
-      </div>
+    <form [formGroup]="form" (ngSubmit)="uploadDocument()">
+      <formly-form [form]="form" [fields]="fields" [model]="model"></formly-form>
 
       <!-- Action Area: Scan vs Upload File -->
       <div class="form-actions-selector">

@@ -1,0 +1,135 @@
+<div class="conflict-modal-content">
+  <div class="conflict-header">
+    <div class="header-icon">⚠️</div>
+    <div>
+      <h3>Document Conflict Detected</h3>
+      <p class="header-desc">
+        An active document of type <strong>{{ adminSourceTypeEnglish }}</strong> already exists for Parcel ID <strong>{{ uniqueParcelId }}</strong>.
+      </p>
+    </div>
+  </div>
+
+  <div class="comparison-grid">
+    <!-- Existing Document (Left) -->
+    <div 
+      class="comparison-card" 
+      [class.selected]="selectedOption === 'keep-old'"
+      (click)="selectOption('keep-old')">
+      
+      <div class="card-badge old-badge">Existing Active Document</div>
+      
+      <div class="card-meta">
+        <div class="meta-item">
+          <span class="meta-label">Document ID:</span>
+          <span class="meta-value">#{{ oldDoc.id }}</span>
+        </div>
+        <div class="meta-item">
+          <span class="meta-label">App Reg ID:</span>
+          <span class="meta-value">{{ oldDoc.appRegId }}</span>
+        </div>
+        <div class="meta-item">
+          <span class="meta-label">Submitted On:</span>
+          <span class="meta-value">{{ oldDoc.submissionDate | date:'medium' }}</span>
+        </div>
+        <div class="meta-item">
+          <span class="meta-label">Status:</span>
+          <span class="meta-value text-success">Active</span>
+        </div>
+      </div>
+
+      <div class="preview-container">
+        <div class="preview-loading" *ngIf="isLoadingOldFile">
+          <div class="spinner"></div>
+          <span>Loading existing document...</span>
+        </div>
+        <div class="preview-error" *ngIf="oldFileError">
+          <span>{{ oldFileError }}</span>
+        </div>
+        
+        <ng-container *ngIf="!isLoadingOldFile && !oldFileError && oldFileUrl">
+          <iframe 
+            *ngIf="oldFileType === 'application/pdf'" 
+            [src]="oldFileUrl" 
+            class="preview-frame">
+          </iframe>
+          <div *ngIf="oldFileType.startsWith('image/')" class="preview-image-wrapper">
+            <img [src]="oldFileUrl" alt="Existing document" class="preview-img" />
+          </div>
+        </ng-container>
+      </div>
+
+      <div class="card-selection-action">
+        <input 
+          type="radio" 
+          id="keep-old-radio" 
+          name="conflictSelection" 
+          value="keep-old" 
+          [(ngModel)]="selectedOption" 
+          (click)="$event.stopPropagation()" />
+        <label for="keep-old-radio">Keep Existing Document</label>
+      </div>
+    </div>
+
+    <!-- New Document (Right) -->
+    <div 
+      class="comparison-card" 
+      [class.selected]="selectedOption === 'replace-new'"
+      (click)="selectOption('replace-new')">
+      
+      <div class="card-badge new-badge">New Document (Pending)</div>
+      
+      <div class="card-meta">
+        <div class="meta-item">
+          <span class="meta-label">App Reg ID:</span>
+          <span class="meta-value">{{ appRegId }}</span>
+        </div>
+        <div class="meta-item">
+          <span class="meta-label">File Name:</span>
+          <span class="meta-value filename-text">{{ newFileName }}</span>
+        </div>
+        <div class="meta-item">
+          <span class="meta-label">Uploaded By:</span>
+          <span class="meta-value">{{ createdBy || 'Current User' }}</span>
+        </div>
+        <div class="meta-item">
+          <span class="meta-label">Status:</span>
+          <span class="meta-value text-warning">Pending Upload</span>
+        </div>
+      </div>
+
+      <div class="preview-container">
+        <iframe 
+          *ngIf="newFileType === 'application/pdf' && sanitizedNewFileUrl" 
+          [src]="sanitizedNewFileUrl" 
+          class="preview-frame">
+        </iframe>
+        <div *ngIf="newFileType.startsWith('image/') && sanitizedNewFileUrl" class="preview-image-wrapper">
+          <img [src]="sanitizedNewFileUrl" alt="New document preview" class="preview-img" />
+        </div>
+        <div *ngIf="newFileType === 'application/pdf' && !sanitizedNewFileUrl" class="pdf-fallback">
+          <span class="fallback-icon">📄</span>
+          <span>PDF ready to upload (Preview not available)</span>
+        </div>
+      </div>
+
+      <div class="card-selection-action">
+        <input 
+          type="radio" 
+          id="replace-new-radio" 
+          name="conflictSelection" 
+          value="replace-new" 
+          [(ngModel)]="selectedOption" 
+          (click)="$event.stopPropagation()" />
+        <label for="replace-new-radio">Replace with New Document</label>
+      </div>
+    </div>
+  </div>
+
+  <div class="conflict-footer">
+    <button type="button" class="btn-secondary" (click)="cancel()">Cancel Upload</button>
+    <button type="button" class="btn-primary" (click)="confirm()">
+      <span *ngIf="selectedOption === 'replace-new'">Confirm & Replace Old</span>
+      <span *ngIf="selectedOption === 'keep-old'">Confirm & Keep Old</span>
+    </button>
+  </div>
+</div>

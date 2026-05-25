@@ -1,6 +1,7 @@
 import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { FormsModule } from '@angular/forms';
+import { FormsModule, ReactiveFormsModule, FormGroup } from '@angular/forms';
+import { FormlyModule, FormlyFieldConfig } from '@ngx-formly/core';
 import { ModalService } from '../shared/modal/modal.service';
 import { DocumentService } from '../features/documents/services/document.service';
 import { AdministrativeSourceTypeService, AdministrativeSourceType } from '../features/documents/services/administrative-source-type.service';
@@ -8,16 +9,14 @@ import { AdministrativeSourceTypeService, AdministrativeSourceType } from '../fe
 @Component({
   selector: 'app-popup-page',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, ReactiveFormsModule, FormlyModule],
   templateUrl: './popup.component.html',
   styleUrls: ['./popup.component.css']
 })
 export class PopupComponent implements OnInit {
-  adminSourceTypeId: number = 0;
-  appRegId: string = '';
-  uniqueParcelId: string = '';
-  sourceId: number | null = null;
-  createdBy: string = '';
+  form = new FormGroup({});
+  model: any = { adminSourceTypeId: 0, appRegId: '', uniqueParcelId: '', sourceId: null, createdBy: '' };
+  fields: FormlyFieldConfig[] = [];
 
   administrativeSourceTypes: AdministrativeSourceType[] = [];
   isLoadingTypes: boolean = false;
@@ -46,9 +45,10 @@ export class PopupComponent implements OnInit {
       next: (types) => {
         this.administrativeSourceTypes = types;
         if (types.length > 0) {
-          this.adminSourceTypeId = types[0].id; // default to the first type
+          this.model.adminSourceTypeId = types[0].id; // default to the first type
         }
         this.isLoadingTypes = false;
+        this.initFormlyFields();
       },
       error: (err) => {
         console.error('Failed to load administrative source types', err);
@@ -58,18 +58,92 @@ export class PopupComponent implements OnInit {
     });
   }
 
+  initFormlyFields(): void {
+    this.fields = [
+      {
+        key: 'adminSourceTypeId',
+        type: 'select',
+        props: {
+          label: 'Administrative Source Type',
+          required: true,
+          placeholder: 'Select a document type...',
+          options: this.administrativeSourceTypes.map(t => ({ label: t.englishValue, value: t.id })),
+          disabled: this.isLoadingTypes || this.isUploading
+        }
+      },
+      {
+        fieldGroupClassName: 'form-row',
+        fieldGroup: [
+          {
+            key: 'appRegId',
+            type: 'input',
+            props: {
+              label: 'Application Registration ID',
+              required: true,
+              placeholder: 'e.g. appReg1000123',
+              disabled: this.isUploading
+            }
+          },
+          {
+            key: 'uniqueParcelId',
+            type: 'input',
+            props: {
+              label: 'Unique Parcel ID',
+              required: true,
+              placeholder: 'e.g. parcel-12345',
+              disabled: this.isUploading
+            }
+          }
+        ]
+      },
+      {
+        fieldGroupClassName: 'form-row',
+        fieldGroup: [
+          {
+            key: 'sourceId',
+            type: 'input',
+            props: {
+              label: 'Source ID (Optional)',
+              type: 'number',
+              placeholder: 'New Source',
+              disabled: this.isUploading
+            }
+          },
+          {
+            key: 'createdBy',
+            type: 'input',
+            props: {
+              label: 'Created By (Optional)',
+              placeholder: 'Your name or ID',
+              disabled: this.isUploading
+            }
+          }
+        ]
+      }
+    ];
+  }
+
+  updateFieldsDisabled(): void {
+    this.initFormlyFields();
+  }
+
   async startScan() {
-    if (!this.appRegId || this.appRegId.trim() === '') {
+    this.form.markAllAsTouched();
+    const appRegId = this.model.appRegId;
+    const uniqueParcelId = this.model.uniqueParcelId;
+    const adminSourceTypeId = this.model.adminSourceTypeId;
+
+    if (!appRegId || appRegId.trim() === '') {
       this.formErrors['appRegId'] = 'Application Registration ID is required before scanning.';
       this.statusMessage = 'Please enter an Application Registration ID first.';
       return;
     }
-    if (!this.uniqueParcelId || this.uniqueParcelId.trim() === '') {
+    if (!uniqueParcelId || uniqueParcelId.trim() === '') {
       this.formErrors['uniqueParcelId'] = 'Unique Parcel ID is required before scanning.';
       this.statusMessage = 'Please enter a Unique Parcel ID first.';
       return;
     }
-    if (!this.adminSourceTypeId || this.adminSourceTypeId === 0) {
+    if (!adminSourceTypeId || adminSourceTypeId === 0) {
       this.formErrors['adminSourceTypeId'] = 'Please select an Administrative Source Type first.';
       this.statusMessage = 'Please select a document type first.';
       return;
@@ -78,18 +152,17 @@ export class PopupComponent implements OnInit {
     this.formErrors = {};
     this.statusMessage = '';
 
-    // Lazy-load scan component and open in modal as a popup
     const mod = await import('../features/scanning/pages/scan/scan.component');
     
     await this.modal.openComponent(
       mod.ScanComponent,
       { title: 'Document Scanner Workbench' },
       {
-        appRegId: this.appRegId,
-        uniqueParcelId: this.uniqueParcelId,
-        adminSourceTypeId: this.adminSourceTypeId,
-        sourceId: this.sourceId,
-        createdBy: this.createdBy
+        appRegId: appRegId.trim(),
+        uniqueParcelId: uniqueParcelId.trim(),
+        adminSourceTypeId: adminSourceTypeId,
+        sourceId: this.model.sourceId,
+        createdBy: this.model.createdBy?.trim() || ''
       }
     );
   }
@@ -117,27 +190,16 @@ export class PopupComponent implements OnInit {
 
   validateForm(): boolean {
     this.formErrors = {};
-
-    if (!this.appRegId || this.appRegId.trim() === '') {
-      this.formErrors['appRegId'] = 'Application Registration ID is required.';
-    }
-
-    if (!this.uniqueParcelId || this.uniqueParcelId.trim() === '') {
-      this.formErrors['uniqueParcelId'] = 'Unique Parcel ID is required.';
-    }
-
-    if (!this.adminSourceTypeId || this.adminSourceTypeId === 0) {
-      this.formErrors['adminSourceTypeId'] = 'Administrative Source Type is required.';
-    }
+    this.form.markAllAsTouched();
 
     if (!this.uploadedFile) {
       this.formErrors['file'] = 'Please select a file to upload or use the scanner.';
     }
 
-    return Object.keys(this.formErrors).length === 0;
+    return this.form.valid && !this.formErrors['file'];
   }
 
-  uploadDocument() {
+  async uploadDocument() {
     if (!this.validateForm()) {
       this.statusMessage = 'Please fill in all required fields.';
       return;
@@ -149,20 +211,85 @@ export class PopupComponent implements OnInit {
     }
 
     this.isUploading = true;
+    this.updateFieldsDisabled();
+    this.statusMessage = 'Checking for duplicate documents...';
+
+    const uniqueParcelId = this.model.uniqueParcelId.trim();
+    const adminSourceTypeId = this.model.adminSourceTypeId;
+
+    try {
+      const duplicate = await this.documentService.checkDuplicate(uniqueParcelId, adminSourceTypeId).toPromise();
+      if (duplicate) {
+        this.statusMessage = 'Duplicate found. Resolving conflict...';
+        
+        let newFileUrl = '';
+        if (this.uploadedFile.type !== 'application/pdf') {
+          newFileUrl = this.capturedImageSrc || '';
+        } else {
+          newFileUrl = URL.createObjectURL(this.uploadedFile);
+        }
+
+        const resultObj: { choice: 'keep-old' | 'replace-new' | 'cancel' } = { choice: 'cancel' };
+        const mod = await import('../shared/components/conflict-modal/conflict-modal.component');
+        
+        await this.modal.openComponent(
+          mod.ConflictModalComponent,
+          { title: 'Document Conflict Detected' },
+          {
+            oldDoc: duplicate,
+            newFileName: this.uploadedFile.name,
+            newFileType: this.uploadedFile.type,
+            newFileUrl: newFileUrl,
+            appRegId: this.model.appRegId,
+            uniqueParcelId: uniqueParcelId,
+            adminSourceTypeEnglish: duplicate.adminSourceTypeEnglish || 'Selected Document Type',
+            createdBy: this.model.createdBy || '',
+            result: resultObj
+          }
+        );
+
+        if (this.uploadedFile.type === 'application/pdf' && newFileUrl.startsWith('blob:')) {
+          URL.revokeObjectURL(newFileUrl);
+        }
+
+        if (resultObj.choice === 'replace-new') {
+          this.statusMessage = 'Replacing existing document...';
+          this.executeUpload();
+        } else if (resultObj.choice === 'keep-old') {
+          this.statusMessage = 'Upload canceled. Kept the existing document.';
+          this.isUploading = false;
+          this.updateFieldsDisabled();
+        } else {
+          this.statusMessage = 'Upload canceled.';
+          this.isUploading = false;
+          this.updateFieldsDisabled();
+        }
+        return;
+      }
+    } catch (err) {
+      console.error('Failed checking for duplicate documents', err);
+    }
+
+    this.executeUpload();
+  }
+
+  private executeUpload() {
+    this.isUploading = true;
+    this.updateFieldsDisabled();
     this.statusMessage = 'Uploading document...';
 
     const formData = new FormData();
-    formData.append('File', this.uploadedFile);
-    formData.append('AppRegId', this.appRegId.trim());
-    formData.append('UniqueParcelId', this.uniqueParcelId.trim());
+    formData.append('File', this.uploadedFile!);
+    formData.append('AppRegId', this.model.appRegId.trim());
+    formData.append('UniqueParcelId', this.model.uniqueParcelId.trim());
     
-    if (this.sourceId) {
-      formData.append('SourceId', this.sourceId.toString());
+    if (this.model.sourceId) {
+      formData.append('SourceId', this.model.sourceId.toString());
     }
-    if (this.createdBy) {
-      formData.append('CreatedBy', this.createdBy.trim());
+    if (this.model.createdBy) {
+      formData.append('CreatedBy', this.model.createdBy.trim());
     }
-    formData.append('AdministrativeSourceTypeId', this.adminSourceTypeId.toString());
+    formData.append('AdministrativeSourceTypeId', this.model.adminSourceTypeId.toString());
 
     this.documentService.uploadDocument(formData).subscribe({
       next: (response) => {
@@ -180,6 +307,7 @@ export class PopupComponent implements OnInit {
       error: (err) => {
         console.error('Upload failed', err);
         this.isUploading = false;
+        this.updateFieldsDisabled();
 
         let errorMessage = 'Upload failed. ';
         if (err.error) {
@@ -207,6 +335,9 @@ export class PopupComponent implements OnInit {
     this.capturedImageSrc = null;
     this.hasCapturedImage = false;
     this.formErrors = {};
-    // Keep appRegId / sourceId / createdBy for convenience
+    
+    const currentValues = { ...this.model };
+    this.form.reset(currentValues);
+    this.updateFieldsDisabled();
   }
 }

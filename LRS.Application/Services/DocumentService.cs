@@ -228,4 +228,28 @@ public class DocumentService : IDocumentService
             DocumentName = d.DocumentName
         });
     }
+
+    public async Task<DocumentResponseDto?> GetLatestByParcelAndTypeAsync(string parcelId, int adminSourceTypeId)
+    {
+        var doc = await _unitOfWork.Documents.GetLatestByParcelAndTypeAsync(parcelId, adminSourceTypeId);
+        if (doc == null || doc.IsVoid)
+        {
+            return null;
+        }
+
+        var adminSourceType = await _unitOfWork.AdministrativeSourceTypes.GetByIdAsync(adminSourceTypeId);
+        
+        return new DocumentResponseDto
+        {
+            Id = doc.Id,
+            SourceId = doc.SourceId,
+            AlfDocumentId = doc.AlfDocumentId,
+            AppRegId = doc.AppRegId,
+            UniqueParcelId = doc.UniqueParcelId,
+            SubmissionDate = doc.SubmissionDate,
+            IsVoid = doc.IsVoid,
+            DocumentName = doc.DocumentName,
+            AdminSourceTypeEnglish = adminSourceType?.EnglishValue
+        };
+    }
 }

@@ -25,9 +25,9 @@
     
       <button type="button" class="top-btn top-btn-main" (click)="confirmEdit()" [disabled]="!hasCapturedImage || !isEditingImage || isProcessingPdf">Confirm</button>
       <button type="button" class="top-btn top-btn-save" (click)="uploadDocument()" [disabled]="!hasCapturedImage || isUploading || isProcessingPdf" aria-label="Save and upload">
-        <span class="top-save-icon" *ngIf="!isUploading && !isProcessingPdf">💾</span>
+        <span class="top-save-icon" *ngIf="!isUploading && !isProcessingPdf"></span>
         <span class="top-save-text" *ngIf="!isUploading && !isProcessingPdf">upload</span>
-        <span class="top-save-icon" *ngIf="isUploading || isProcessingPdf">⏳</span>
+        <span class="top-save-icon" *ngIf="isUploading || isProcessingPdf"></span>
         <span class="top-save-text" *ngIf="isUploading || isProcessingPdf">Saving...</span>
       </button>
     

@@ -1061,15 +1061,75 @@ applyBrightness(): void {
 
     this.isProcessingPdf = false;
     this.isUploading = true;
+    this.statusMessage = 'Checking for duplicate documents...';
+
+    // Check for duplicates
+    try {
+      const finalUniqueParcelId = this.uniqueParcelId ? this.uniqueParcelId.trim() : (this.appRegId ? this.appRegId.trim() : this.buildAppRegId());
+      const duplicate = await this.documentService.checkDuplicate(finalUniqueParcelId, this.adminSourceTypeId).toPromise();
+      
+      if (duplicate) {
+        this.statusMessage = 'Duplicate found. Resolving conflict...';
+
+        let newFileUrl = '';
+        if (this.uploadedFile.type !== 'application/pdf') {
+          newFileUrl = this.capturedImageSrc || '';
+        } else {
+          newFileUrl = URL.createObjectURL(this.uploadedFile);
+        }
+
+        const resultObj: { choice: 'keep-old' | 'replace-new' | 'cancel' } = { choice: 'cancel' };
+        const mod = await import('../../../../shared/components/conflict-modal/conflict-modal.component');
+
+        await this.modalService.openComponent(
+          mod.ConflictModalComponent,
+          { title: 'Document Conflict Detected' },
+          {
+            oldDoc: duplicate,
+            newFileName: this.uploadedFile.name,
+            newFileType: this.uploadedFile.type,
+            newFileUrl: newFileUrl,
+            appRegId: this.appRegId || finalUniqueParcelId,
+            uniqueParcelId: finalUniqueParcelId,
+            adminSourceTypeEnglish: duplicate.adminSourceTypeEnglish || 'Selected Document Type',
+            createdBy: this.createdBy,
+            result: resultObj
+          }
+        );
+
+        if (this.uploadedFile.type === 'application/pdf' && newFileUrl.startsWith('blob:')) {
+          URL.revokeObjectURL(newFileUrl);
+        }
+
+        if (resultObj.choice === 'replace-new') {
+          this.statusMessage = 'Replacing existing document...';
+          this.executeUpload(finalUniqueParcelId);
+        } else if (resultObj.choice === 'keep-old') {
+          this.statusMessage = 'Upload canceled. Kept the existing document.';
+          this.isUploading = false;
+        } else {
+          this.statusMessage = 'Upload canceled.';
+          this.isUploading = false;
+        }
+        return;
+      }
+    } catch (err) {
+      console.error('Failed checking for duplicate documents', err);
+    }
+
+    const finalUniqueParcelId = this.uniqueParcelId ? this.uniqueParcelId.trim() : (this.appRegId ? this.appRegId.trim() : this.buildAppRegId());
+    this.executeUpload(finalUniqueParcelId);
+  }
+
+  private executeUpload(finalUniqueParcelId: string): void {
+    this.isUploading = true;
     this.statusMessage = 'Uploading document...';
 
     const formData = new FormData();
-    formData.append('File', this.uploadedFile);
+    formData.append('File', this.uploadedFile!);
     
     const finalAppRegId = this.appRegId ? this.appRegId.trim() : this.buildAppRegId();
     formData.append('AppRegId', finalAppRegId);
-    
-    const finalUniqueParcelId = this.uniqueParcelId ? this.uniqueParcelId.trim() : finalAppRegId;
     formData.append('UniqueParcelId', finalUniqueParcelId);
     
     if (this.sourceId) {
@@ -1097,12 +1157,10 @@ applyBrightness(): void {
       error: (err) => {
         console.error('Upload failed', err);
         this.isUploading = false;
-        this.isProcessingPdf = false;
 
         let errorMessage = 'Upload failed. ';
         if (err.error) {
           if (err.error.errors && Array.isArray(err.error.errors)) {
-            // Validation errors from API
             errorMessage = 'Validation errors: ' + err.error.errors.join(', ');
           } else if (typeof err.error === 'string') {
             errorMessage += err.error;
